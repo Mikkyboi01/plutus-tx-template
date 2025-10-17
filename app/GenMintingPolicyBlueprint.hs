@@ -24,6 +24,12 @@ import Data.Set qualified as Set
 import PlutusLedgerApi.Common (serialiseCompiledCode)
 import PlutusTx.Blueprint
 import System.Environment (getArgs)
+import System.Exit (die)
+import Control.Monad (unless)
+
+--------------------------------------------------------------------------------
+-- Contract Blueprint Definition
+--------------------------------------------------------------------------------
 
 myContractBlueprint :: ContractBlueprint
 myContractBlueprint =
@@ -34,21 +40,29 @@ myContractBlueprint =
     , contractDefinitions = deriveDefinitions @[AuctionMintingParams, ()]
     }
 
+--------------------------------------------------------------------------------
+-- Preamble
+--------------------------------------------------------------------------------
+
 myPreamble :: Preamble
 myPreamble =
   MkPreamble
     { preambleTitle = "Auction Minting Policy"
-    , preambleDescription = Just "A simple minting policy"
+    , preambleDescription = Just "A simple minting policy for auctions"
     , preambleVersion = "1.0.0"
     , preamblePlutusVersion = PlutusV2
     , preambleLicense = Just "MIT"
     }
 
+--------------------------------------------------------------------------------
+-- Validator Definition
+--------------------------------------------------------------------------------
+
 myValidator :: ValidatorBlueprint referencedTypes
 myValidator =
   MkValidatorBlueprint
     { validatorTitle = "Auction Minting Validator"
-    , validatorDescription = Just "A simple minting validator"
+    , validatorDescription = Just "Validator for auction-based minting policy"
     , validatorParameters =
         [ MkParameterBlueprint
             { parameterTitle = Just "Minting Validator Parameters"
@@ -59,23 +73,42 @@ myValidator =
         ]
     , validatorRedeemer =
         MkArgumentBlueprint
-          { argumentTitle = Just "Redeemer for the minting policy"
-          , argumentDescription = Just "The minting policy does not use a redeemer, hence ()"
-          , argumentPurpose = Set.fromList [Mint]
+          { argumentTitle = Just "Redeemer"
+          , argumentDescription = Just "Unit redeemer for minting policy"
+          , argumentPurpose = Set.singleton Mint
           , argumentSchema = definitionRef @()
           }
     , validatorDatum = Nothing
-    , validatorCompiled = do 
-        let script = auctionMintingPolicyScript (error "Replace with seller public key hash")
-        let code = Short.fromShort (serialiseCompiledCode script) 
-        Just (compiledValidator PlutusV2 code)
+    , validatorCompiled = Just compiledAuctionPolicy
     }
 
+--------------------------------------------------------------------------------
+-- Compiled Policy
+--------------------------------------------------------------------------------
+
+compiledAuctionPolicy :: CompiledValidator
+compiledAuctionPolicy =
+  let script = auctionMintingPolicyScript (error "Replace with seller's public key hash")
+      code = Short.fromShort (serialiseCompiledCode script)
+  in compiledValidator PlutusV2 code
+
+--------------------------------------------------------------------------------
+-- File Writer
+--------------------------------------------------------------------------------
+
 writeBlueprintToFile :: FilePath -> IO ()
-writeBlueprintToFile path = writeBlueprint path myContractBlueprint
+writeBlueprintToFile path = do
+  putStrLn $ "Writing blueprint to: " <> path
+  writeBlueprint path myContractBlueprint
+  putStrLn "✅ Blueprint successfully written."
+
+--------------------------------------------------------------------------------
+-- Main Entry Point
+--------------------------------------------------------------------------------
 
 main :: IO ()
-main =
-  getArgs >>= \case
-    [arg] -> writeBlueprintToFile arg
-    args -> fail $ "Expects one argument, got " <> show (length args)
+main = do
+  args <- getArgs
+  case args of
+    [path] -> writeBlueprintToFile path
+    _      -> die "❌ Error: Expected exactly one argument (output file path)."
